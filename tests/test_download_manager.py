@@ -25,6 +25,7 @@ import unittest
 import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
+from unittest import mock
 
 from fluster.download_manager import DownloadManager
 from fluster.utils import file_checksum, filename_from_url
@@ -247,6 +248,64 @@ class TestDownloadManager(unittest.TestCase):
             self._download(suites)
 
         self.assertIn("2 URL(s)", str(ctx.exception))
+
+    def test_missing_zip_member_warns_and_continues(self) -> None:
+        url, checksum = self._archive("shared.zip", {"a.bits": b"a"})
+        suite = _FakeSuite("missing", {"v": _FakeVector(url, checksum, "missing.bits")})
+
+        self._download([suite])
+
+        self._assert_missing("missing", "v", "missing.bits")
+
+    def test_single_plain_source_stays_per_vector(self) -> None:
+        plain_url, plain_checksum = self._plain("shared.bin", b"data")
+        suite = _FakeSuite(
+            "single_plain",
+            {
+                "v1": _FakeVector(plain_url, plain_checksum, "shared.bin"),
+                "v2": _FakeVector(plain_url, plain_checksum, "shared.bin"),
+            },
+        )
+
+        self._download([suite])
+
+        self._assert_exists("single_plain", "v1", "shared.bin")
+        self._assert_exists("single_plain", "v2", "shared.bin")
+        self._assert_missing("single_plain", "shared.bin")
+
+    def test_shared_archive_downloaded_once_across_suites(self) -> None:
+        url = _url("shared.zip")
+        members = {"a.bits": b"a", "b.bits": b"b"}
+        suites = [
+            _FakeSuite(
+                name,
+                {
+                    "va": _FakeVector(url, "__skip__", "a.bits"),
+                    "vb": _FakeVector(url, "__skip__", "b.bits"),
+                },
+            )
+            for name in ("s1", "s2")
+        ]
+
+        # Downloads run in a worker process, so record them on the filesystem.
+        counter_path = os.path.join(self.build, "downloads.log")
+
+        def fake_download(source: str, dest_dir: str, *_args: object, **_kwargs: object) -> None:
+            with open(counter_path, "a", encoding="utf-8") as log:
+                log.write(source + "\n")
+            with zipfile.ZipFile(os.path.join(dest_dir, filename_from_url(source)), "w") as zip_file:
+                for name, data in members.items():
+                    zip_file.writestr(name, data)
+
+        with mock.patch("fluster.download_manager.download", side_effect=fake_download):
+            self._download(suites)
+
+        with open(counter_path, encoding="utf-8") as log:
+            self.assertEqual(log.read().splitlines(), [url])
+        self._assert_exists("s1", "a.bits")
+        self._assert_exists("s1", "b.bits")
+        self._assert_exists("s2", "a.bits")
+        self._assert_exists("s2", "b.bits")
 
 
 if __name__ == "__main__":
