@@ -201,7 +201,7 @@ class TestSuite:
         Download the test suite resources.
         """
         manager = DownloadManager(out_dir, verify, extract_all, keep_file, retries, mirror)
-        manager.download([self], jobs)
+        manager.download_test_suite(self, jobs)
 
     @staticmethod
     def _rename_test(test: Test, module: str, qualname: str) -> None:

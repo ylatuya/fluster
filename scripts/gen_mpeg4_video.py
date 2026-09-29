@@ -28,6 +28,7 @@ from urllib.parse import urljoin
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from fluster import utils
 from fluster.codec import Codec, OutputFormat, Profile
+from fluster.download_manager import DownloadManager
 from fluster.test_suite import TestMethod, TestSuite
 from fluster.test_vector import TestVector
 from fluster.utils import create_enhanced_opener
@@ -280,7 +281,10 @@ class MPEG4VIDEOGenerator:
                             )
                             if orig_name:
                                 downloaded_file = os.path.join(
-                                    suite_dir, orig_name, os.path.basename(test_vector.source)
+                                    test_suite.resources_dir,
+                                    DownloadManager.test_vector_source_path(
+                                        test_suite.name, orig_name, test_vector.source
+                                    ),
                                 )
                                 if os.path.exists(downloaded_file):
                                     test_vector.source_checksum = utils.file_checksum(downloaded_file)

@@ -1,5 +1,5 @@
 # Fluster - testing framework for decoders conformance
-# Copyright (C) 2020, Fluendo, S.A.
+# Copyright (C) 2026, Fluendo, S.A.
 #  Author: Pablo Marcos Oltra <pmarcos@fluendo.com>, Fluendo, S.A.
 #  Author: Andoni Morales Alastruey <amorales@fluendo.com>, Fluendo, S.A.
 #
@@ -26,9 +26,12 @@ import sys
 import zipfile
 from dataclasses import dataclass, field
 from multiprocessing import Pool
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from fluster.utils import download, extract, extract_zip_members, file_checksum, filename_from_url, is_extractable
+
+if TYPE_CHECKING:
+    from fluster.test_suite import TestSuite
 
 
 @dataclass
@@ -91,7 +94,7 @@ class DownloadManager:
         """Path to the shared download cache directory."""
         return os.path.join(self.out_dir, self.CACHE_DIR)
 
-    def download(self, test_suites: List[Any], jobs: int) -> None:
+    def download(self, test_suites: List[TestSuite], jobs: int) -> None:
         """Download resources for multiple test suites.
 
         Collects all test vectors from all suites, deduplicates by source URL,
@@ -133,7 +136,10 @@ class DownloadManager:
             pool.close()
             pool.join()
 
-        if any(not result.successful() for result in results):
+        failed = [task.source_url for task, result in zip(tasks, results) if not result.successful()]
+        if failed:
+            for source_url in failed:
+                print(f"ERROR: download failed for {source_url}")
             sys.exit("Some download failed")
 
         # Clean up cache directory
@@ -143,7 +149,7 @@ class DownloadManager:
         print("All downloads finished")
 
     @staticmethod
-    def _collect_tasks(test_suites: List[Any]) -> List[_DownloadTask]:
+    def _collect_tasks(test_suites: List[TestSuite]) -> List[_DownloadTask]:
         """Group test vectors by source URL into deduplicated download tasks."""
         suite_sources = {ts.name: {tv.source for tv in ts.test_vectors.values()} for ts in test_suites}
         suite_vector_count = {ts.name: len(ts.test_vectors) for ts in test_suites}
@@ -194,7 +200,7 @@ class DownloadManager:
 
         return list(source_map.values())
 
-    def download_test_suite(self, test_suite: Any, jobs: int) -> None:
+    def download_test_suite(self, test_suite: TestSuite, jobs: int) -> None:
         """Download resources for a single test suite.
 
         Convenience wrapper around :meth:`download`.
@@ -284,6 +290,11 @@ class DownloadManager:
         if not destination.suite_root:
             dest_dir = os.path.join(dest_dir, destination.test_vector_name)
         return dest_dir
+
+    @staticmethod
+    def test_vector_source_path(suite_name: str, test_vector_name: str, source: str) -> str:
+        """Path of a test vector's source file, relative to the resources directory."""
+        return os.path.join(suite_name, test_vector_name, filename_from_url(source))
 
     def _download_to_cache(self, task: _DownloadTask, cache_path: str) -> None:
         """Download a source file to the cache directory, with verification.
